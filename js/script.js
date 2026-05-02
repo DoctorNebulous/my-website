@@ -63,16 +63,26 @@ if (canvas) {
   let light = [];
 
   const LIGHT_SPEED = 5;
+  const SPLIT_DELAY = 90;
+  const SPLIT_FORCE = 3;
+  const SNAP_DISTANCE = 140;
+  const GLUON_STRENGTH = 0.0025;
+
+  function makeCore(x, y) {
+    return {
+      x,
+      y,
+      vx: (Math.random() - 0.5) * 1.5,
+      vy: (Math.random() - 0.5) * 1.5,
+      state: "stable",
+      timer: 0,
+      parts: []
+    };
+  }
 
   function resetSimulation() {
     cores = [
-      {
-        x: canvas.width / 2,
-        y: canvas.height / 2,
-        state: "stable",
-        timer: 0,
-        parts: []
-      }
+      makeCore(canvas.width / 2, canvas.height / 2)
     ];
 
     light = [];
@@ -84,24 +94,26 @@ if (canvas) {
     core.state = "split";
     core.timer = 0;
 
+    const angle = Math.random() * Math.PI * 2;
+
     core.parts = [
       {
         x: core.x,
         y: core.y,
-        vx: -3,
-        vy: 0,
+        vx: core.vx + Math.cos(angle) * SPLIT_FORCE,
+        vy: core.vy + Math.sin(angle) * SPLIT_FORCE,
         value: -1
       },
       {
         x: core.x,
         y: core.y,
-        vx: 3,
-        vy: 0,
+        vx: core.vx - Math.cos(angle) * SPLIT_FORCE,
+        vy: core.vy - Math.sin(angle) * SPLIT_FORCE,
         value: 1
       }
     ];
 
-    releaseLight(core.x, core.y, 6);
+    releaseLight(core.x, core.y, 4);
   }
 
   function mergeCore(core) {
@@ -109,7 +121,16 @@ if (canvas) {
     core.timer = 0;
     core.parts = [];
 
-    releaseLight(core.x, core.y, 10);
+    releaseLight(core.x, core.y, 8);
+  }
+
+  function snapGluon(core) {
+    const a = core.parts[0];
+    const b = core.parts[1];
+
+    core.state = "snapped";
+
+    releaseLight((a.x + b.x) / 2, (a.y + b.y) / 2, 18);
   }
 
   function releaseLight(x, y, amount) {
@@ -131,41 +152,70 @@ if (canvas) {
     core.timer++;
 
     if (core.state === "stable") {
-      if (core.timer > 80) {
+      core.x += core.vx;
+      core.y += core.vy;
+
+      if (core.x < 10 || core.x > canvas.width - 10) {
+        core.vx *= -1;
+      }
+
+      if (core.y < 10 || core.y > canvas.height - 10) {
+        core.vy *= -1;
+      }
+
+      if (core.timer > SPLIT_DELAY) {
         splitCore(core);
       }
     }
 
     if (core.state === "split") {
-      const left = core.parts[0];
-      const right = core.parts[1];
+      const a = core.parts[0];
+      const b = core.parts[1];
 
-      // Move apart first
-      left.x += left.vx;
-      left.y += left.vy;
-      right.x += right.vx;
-      right.y += right.vy;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const distance = Math.sqrt(dx * dx + dy * dy) || 1;
 
-      // Pull back toward center
-      const pullStrength = 0.08;
+      const nx = dx / distance;
+      const ny = dy / distance;
 
-      left.vx += (core.x - left.x) * pullStrength;
-      left.vy += (core.y - left.y) * pullStrength;
+      // Gluon: farther apart = stronger pull
+      const pull = distance * GLUON_STRENGTH;
 
-      right.vx += (core.x - right.x) * pullStrength;
-      right.vy += (core.y - right.y) * pullStrength;
+      a.vx += nx * pull;
+      a.vy += ny * pull;
 
-      // Dampen so they don't slingshot forever
-      left.vx *= 0.92;
-      left.vy *= 0.92;
-      right.vx *= 0.92;
-      right.vy *= 0.92;
+      b.vx -= nx * pull;
+      b.vy -= ny * pull;
 
-      const dx = left.x - right.x;
-      const dy = left.y - right.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+      a.x += a.vx;
+      a.y += a.vy;
+
+      b.x += b.vx;
+      b.y += b.vy;
+
+      [a, b].forEach(part => {
+        if (part.x < 8 || part.x > canvas.width - 8) {
+          part.vx *= -1;
+        }
+
+        if (part.y < 8 || part.y > canvas.height - 8) {
+          part.vy *= -1;
+        }
+      });
+
+      if (distance > SNAP_DISTANCE) {
+        snapGluon(core);
+        return;
+      }
 
       if (distance < 8 && core.timer > 20) {
+        core.x = (a.x + b.x) / 2;
+        core.y = (a.y + b.y) / 2;
+
+        core.vx = (a.vx + b.vx) / 2;
+        core.vy = (a.vy + b.vy) / 2;
+
         mergeCore(core);
       }
     }
@@ -177,32 +227,28 @@ if (canvas) {
       photon.y += photon.vy;
       photon.life--;
 
-      // bounce off screen edges for now
-      if (photon.x < 0 || photon.x > canvas.width) photon.vx *= -1;
-      if (photon.y < 0 || photon.y > canvas.height) photon.vy *= -1;
-    });
+      if (photon.x < 0 || photon.x > canvas.width) {
+        photon.vx *= -1;
+      }
 
-    // old light fades out
-    light = light.filter(photon => photon.life > 0);
+      if (photon.y < 0 || photon.y > canvas.height) {
+        photon.vy *= -1;
+      }
 
-    // rare collapse: old light becomes new 0
-    light.forEach(photon => {
-      if (photon.life < 10 && Math.random() < 0.003) {
-        cores.push({
-          x: photon.x,
-          y: photon.y,
-          state: "stable",
-          timer: 0,
-          parts: []
-        });
-
+      // rare collision collapse into new 0
+      if (photon.life < 20 && Math.random() < 0.002) {
+        cores.push(makeCore(photon.x, photon.y));
         photon.life = 0;
       }
     });
+
+    light = light.filter(photon => photon.life > 0);
   }
 
   function update() {
     cores.forEach(updateCore);
+    cores = cores.filter(core => core.state !== "snapped");
+
     updateLight();
   }
 
@@ -221,11 +267,20 @@ if (canvas) {
     }
 
     if (core.state === "split") {
+      const a = core.parts[0];
+      const b = core.parts[1];
+
+      ctx.beginPath();
+      ctx.strokeStyle = "rgba(248,250,252,0.25)";
+      ctx.lineWidth = Math.min(6, 1 + distanceBetween(a, b) / 35);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+
       core.parts.forEach(part => {
         ctx.beginPath();
-
         ctx.fillStyle = part.value > 0 ? "#38bdf8" : "#f43f5e";
-
         ctx.arc(part.x, part.y, 8, 0, Math.PI * 2);
         ctx.fill();
 
@@ -235,24 +290,20 @@ if (canvas) {
         ctx.textBaseline = "middle";
         ctx.fillText(part.value, part.x, part.y);
       });
-
-      // connection line / trapped tension
-      const a = core.parts[0];
-      const b = core.parts[1];
-
-      ctx.beginPath();
-      ctx.strokeStyle = "rgba(248,250,252,0.35)";
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
     }
   }
 
   function drawLight(photon) {
     ctx.beginPath();
-    ctx.fillStyle = "rgba(250, 204, 21, 0.9)";
+    ctx.fillStyle = "rgba(250, 204, 21, 0.85)";
     ctx.arc(photon.x, photon.y, 3, 0, Math.PI * 2);
     ctx.fill();
+  }
+
+  function distanceBetween(a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    return Math.sqrt(dx * dx + dy * dy);
   }
 
   function draw() {
