@@ -17,6 +17,17 @@
       --border: #cbd5e1;
     }
 
+    .page-home .nav-home,
+    .page-projects .nav-projects,
+    .page-notes .nav-notes,
+    .page-contact .nav-contact,
+    .page-ideas .nav-contact,
+    .page-simulation .nav-simulation {
+      background: var(--accent);
+      color: var(--bg);
+      border-color: var(--accent);
+    }
+
     *{
       box-sizing: border-box;
     }
