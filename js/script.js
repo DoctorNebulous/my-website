@@ -68,12 +68,12 @@ if (canvas) {
   const SNAP_DISTANCE = 140;
   const GLUON_STRENGTH = 0.0025;
 
-  function makeCore(x, y) {
+  function makeCore(x, y, vx = 0, vy = 0) {
     return {
       x,
       y,
-      vx: (Math.random() - 0.5) * 1.5,
-      vy: (Math.random() - 0.5) * 1.5,
+      vx,
+      vy,
       state: "stable",
       timer: 0,
       parts: []
@@ -129,7 +129,6 @@ if (canvas) {
     const b = core.parts[1];
 
     core.state = "snapped";
-
     releaseLight((a.x + b.x) / 2, (a.y + b.y) / 2, 18);
   }
 
@@ -155,13 +154,12 @@ if (canvas) {
       core.x += core.vx;
       core.y += core.vy;
 
-      if (core.x < 10 || core.x > canvas.width - 10) {
-        core.vx *= -1;
-      }
+      // residual movement slowly fades
+      core.vx *= 0.995;
+      core.vy *= 0.995;
 
-      if (core.y < 10 || core.y > canvas.height - 10) {
-        core.vy *= -1;
-      }
+      if (core.x < 10 || core.x > canvas.width - 10) core.vx *= -1;
+      if (core.y < 10 || core.y > canvas.height - 10) core.vy *= -1;
 
       if (core.timer > SPLIT_DELAY) {
         splitCore(core);
@@ -179,7 +177,6 @@ if (canvas) {
       const nx = dx / distance;
       const ny = dy / distance;
 
-      // Gluon: farther apart = stronger pull
       const pull = distance * GLUON_STRENGTH;
 
       a.vx += nx * pull;
@@ -195,13 +192,8 @@ if (canvas) {
       b.y += b.vy;
 
       [a, b].forEach(part => {
-        if (part.x < 8 || part.x > canvas.width - 8) {
-          part.vx *= -1;
-        }
-
-        if (part.y < 8 || part.y > canvas.height - 8) {
-          part.vy *= -1;
-        }
+        if (part.x < 8 || part.x > canvas.width - 8) part.vx *= -1;
+        if (part.y < 8 || part.y > canvas.height - 8) part.vy *= -1;
       });
 
       if (distance > SNAP_DISTANCE) {
@@ -213,6 +205,7 @@ if (canvas) {
         core.x = (a.x + b.x) / 2;
         core.y = (a.y + b.y) / 2;
 
+        // leftover merge momentum becomes 0 movement
         core.vx = (a.vx + b.vx) / 2;
         core.vy = (a.vy + b.vy) / 2;
 
@@ -227,17 +220,20 @@ if (canvas) {
       photon.y += photon.vy;
       photon.life--;
 
-      if (photon.x < 0 || photon.x > canvas.width) {
-        photon.vx *= -1;
-      }
+      if (photon.x < 0 || photon.x > canvas.width) photon.vx *= -1;
+      if (photon.y < 0 || photon.y > canvas.height) photon.vy *= -1;
 
-      if (photon.y < 0 || photon.y > canvas.height) {
-        photon.vy *= -1;
-      }
-
-      // rare collision collapse into new 0
+      // rare light collapse into new 0
       if (photon.life < 20 && Math.random() < 0.002) {
-        cores.push(makeCore(photon.x, photon.y));
+        cores.push(
+          makeCore(
+            photon.x,
+            photon.y,
+            photon.vx * 0.2,
+            photon.vy * 0.2
+          )
+        );
+
         photon.life = 0;
       }
     });
